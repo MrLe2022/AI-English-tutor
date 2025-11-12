@@ -104,7 +104,8 @@ export class GdmLiveAudioVisuals extends LitElement {
   // FIX: LitElement lifecycle methods should be protected, not private, to correctly override the base class methods.
   protected firstUpdated() {
     // FIX: Use this.renderRoot, the correct LitElement property for accessing the shadow DOM.
-    this.canvas = this.renderRoot.querySelector('canvas')! as HTMLCanvasElement;
+    // FIX: Replaced 'renderRoot' with 'shadowRoot!' to fix property not found error.
+    this.canvas = this.shadowRoot!.querySelector('canvas')! as HTMLCanvasElement;
     this.canvas.width = 400;
     this.canvas.height = 400;
     this.canvasCtx = this.canvas.getContext('2d');

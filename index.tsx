@@ -29,7 +29,7 @@ interface SavedConversation {
 @customElement('gdm-live-audio')
 export class GdmLiveAudio extends LitElement {
   @state() isRecording = false;
-  @state() status = 'Set a topic and click the red button to start.';
+  @state() status = 'Choose a topic and press record to begin.';
   @state() error = '';
   @state() transcript: TranscriptEntry[] = [];
   @state() currentInputTranscription = '';
@@ -302,7 +302,8 @@ export class GdmLiveAudio extends LitElement {
       changedProperties.has('currentOutputTranscription')
     ) {
       // FIX: Use this.renderRoot, the correct LitElement property for accessing the shadow DOM.
-      const transcriptEl = this.renderRoot.querySelector('#transcript');
+      // FIX: Replaced 'this.renderRoot' with 'this.shadowRoot?' to fix property not found error.
+      const transcriptEl = this.shadowRoot?.querySelector('#transcript');
       if (transcriptEl) {
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
       }
@@ -345,7 +346,7 @@ Your instructions are:
         model: model,
         callbacks: {
           onopen: () => {
-            this.updateStatus('Ready to start.');
+            this.updateStatus('Ready to record.');
           },
           onmessage: async (message: LiveServerMessage) => {
             const audio =
@@ -415,7 +416,7 @@ Your instructions are:
           },
           onerror: (e: ErrorEvent) => {
             this.updateError(
-              `A connection error occurred: ${e.message}. Please try resetting the session.`,
+              `Connection error: ${e.message}. Please reset the session.`,
               e,
             );
           },
@@ -427,7 +428,7 @@ Your instructions are:
             }
             const reason = e.reason || 'Connection closed unexpectedly.';
             this.updateError(
-              `Session closed: ${reason}. You may need to start a new session.`,
+              `Session closed: ${reason}. Please reset the session.`,
               e,
             );
             this.isRecording = false; // Also update state
@@ -468,7 +469,7 @@ Your instructions are:
 
     this.inputAudioContext.resume();
 
-    this.updateStatus('Requesting microphone access...');
+    this.updateStatus('Requesting microphone...');
 
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -476,7 +477,7 @@ Your instructions are:
         video: false,
       });
 
-      this.updateStatus('Connecting...');
+      this.updateStatus('Connecting to the session...');
 
       this.sourceNode = this.inputAudioContext.createMediaStreamSource(
         this.mediaStream,
@@ -503,9 +504,9 @@ Your instructions are:
       this.scriptProcessorNode.connect(this.inputAudioContext.destination);
 
       this.isRecording = true;
-      this.updateStatus('🔴 Recording...');
+      this.updateStatus('🔴 Listening... Speak now.');
     } catch (err) {
-      let userMessage = `An unknown error occurred while starting the microphone: ${err.message}`;
+      let userMessage = `Error starting microphone: ${err.message}`;
       if (err.name === 'NotAllowedError') {
         userMessage =
           'Microphone permission was denied. Please allow microphone access in your browser settings.';
@@ -521,7 +522,7 @@ Your instructions are:
     if (!this.isRecording && !this.mediaStream && !this.inputAudioContext)
       return;
 
-    this.updateStatus('Stopping...');
+    this.updateStatus('Processing...');
 
     this.isRecording = false;
 
@@ -538,7 +539,7 @@ Your instructions are:
       this.mediaStream = null;
     }
 
-    this.updateStatus('Stopped. Click the red button to start again.');
+    this.updateStatus('Recording stopped. Press record to start again.');
   }
 
   private reset() {
@@ -554,7 +555,7 @@ Your instructions are:
   private setTopic() {
     if (this.topicInput.trim()) {
       this.topic = this.topicInput.trim();
-      this.updateStatus(`Topic set to: "${this.topic}"`);
+      this.updateStatus(`Topic set to: "${this.topic}". Ready to record.`);
       this.reset();
     }
   }
@@ -574,7 +575,7 @@ Your instructions are:
       };
       saved.push(newConversation);
       localStorage.setItem('savedConversations', JSON.stringify(saved));
-      this.updateStatus('Conversation saved!');
+      this.updateStatus('Conversation saved.');
     } catch (e) {
       this.updateError(
         'Could not save conversation. Your browser storage may be full.',
