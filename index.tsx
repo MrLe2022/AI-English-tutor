@@ -415,8 +415,39 @@ Your instructions are:
             }
           },
           onerror: (e: ErrorEvent) => {
+            let errorMessage = 'An unknown error occurred';
+            const errorSource = e.error || e.message;
+
+            // Try to extract a meaningful message from various error shapes
+            if (typeof errorSource === 'string') {
+              errorMessage = errorSource;
+            } else if (errorSource instanceof Error) {
+              errorMessage = errorSource.message;
+            } else if (
+              errorSource &&
+              typeof errorSource === 'object' &&
+              'message' in errorSource
+            ) {
+              errorMessage = String(errorSource.message);
+            }
+
+            // Clean up common prefixes for better display.
+            if (errorMessage.startsWith('Error: ')) {
+              errorMessage = errorMessage.substring(7);
+            }
+
+            // Replace '[object Object]' which is unhelpful
+            if (errorMessage.includes('[object Object]')) {
+              errorMessage = 'An unexpected connection issue occurred.';
+            }
+
+            // Remove trailing period to prevent double periods in the final message.
+            if (errorMessage.endsWith('.')) {
+              errorMessage = errorMessage.slice(0, -1);
+            }
+
             this.updateError(
-              `Connection error: ${e.message}. Please reset the session.`,
+              `Connection error: ${errorMessage}. Please reset the session.`,
               e,
             );
           },
@@ -426,9 +457,18 @@ Your instructions are:
               console.log('Session closed intentionally.', e);
               return; // Do not treat as an error
             }
-            const reason = e.reason || 'Connection closed unexpectedly.';
+            let reason = e.reason || 'Connection closed unexpectedly';
+
+            // Same cleanup logic as onerror for consistency
+            if (reason.startsWith('Error: ')) {
+              reason = reason.substring(7);
+            }
+            if (reason.endsWith('.')) {
+              reason = reason.slice(0, -1);
+            }
+
             this.updateError(
-              `Session closed: ${reason}. Please reset the session.`,
+              `Session closed: ${reason}. You may need to start a new session.`,
               e,
             );
             this.isRecording = false; // Also update state
