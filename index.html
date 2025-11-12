@@ -10,7 +10,11 @@
     }
   }
 </script>
+<!-- Thêm Babel Standalone để biên dịch TypeScript trong trình duyệt -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <body>
   <gdm-live-audio></gdm-live-audio>
-  <script type="module" src="index.tsx"></script>
+  <!-- Sử dụng type="text/babel" để biên dịch script chính.
+       Babel sẽ xử lý các câu lệnh import bên trong các tệp TS. -->
+  <script type="text/babel" data-presets="typescript" src="index.tsx"></script>
 </body>

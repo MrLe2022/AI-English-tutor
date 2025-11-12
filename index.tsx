@@ -415,33 +415,32 @@ Your instructions are:
             }
           },
           onerror: (e: ErrorEvent) => {
-            let errorMessage = 'An unknown error occurred';
+            let errorMessage =
+              'A network error occurred. Please check your connection.';
             const errorSource = e.error || e.message;
 
-            // Try to extract a meaningful message from various error shapes
+            let extractedMessage = '';
             if (typeof errorSource === 'string') {
-              errorMessage = errorSource;
+              extractedMessage = errorSource;
             } else if (errorSource instanceof Error) {
-              errorMessage = errorSource.message;
+              extractedMessage = errorSource.message;
             } else if (
               errorSource &&
-              typeof errorSource === 'object' &&
-              'message' in errorSource
+              typeof errorSource.message === 'string'
             ) {
-              errorMessage = String(errorSource.message);
+              extractedMessage = errorSource.message;
             }
 
-            // Clean up common prefixes for better display.
-            if (errorMessage.startsWith('Error: ')) {
-              errorMessage = errorMessage.substring(7);
+            // Use the extracted message only if it's meaningful and not an object stringification
+            if (
+              extractedMessage &&
+              !extractedMessage.includes('[object Object]')
+            ) {
+              errorMessage = extractedMessage;
             }
 
-            // Replace '[object Object]' which is unhelpful
-            if (errorMessage.includes('[object Object]')) {
-              errorMessage = 'An unexpected connection issue occurred.';
-            }
-
-            // Remove trailing period to prevent double periods in the final message.
+            // Final cleanup for presentation
+            errorMessage = errorMessage.replace(/^Error: /g, '').trim();
             if (errorMessage.endsWith('.')) {
               errorMessage = errorMessage.slice(0, -1);
             }
@@ -457,12 +456,18 @@ Your instructions are:
               console.log('Session closed intentionally.', e);
               return; // Do not treat as an error
             }
-            let reason = e.reason || 'Connection closed unexpectedly';
+            let reason = 'The connection was closed unexpectedly';
 
-            // Same cleanup logic as onerror for consistency
-            if (reason.startsWith('Error: ')) {
-              reason = reason.substring(7);
+            if (
+              e.reason &&
+              typeof e.reason === 'string' &&
+              !e.reason.includes('[object Object]')
+            ) {
+              reason = e.reason;
             }
+
+            // Final cleanup for presentation
+            reason = reason.replace(/^Error: /g, '').trim();
             if (reason.endsWith('.')) {
               reason = reason.slice(0, -1);
             }
