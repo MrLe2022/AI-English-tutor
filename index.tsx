@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// =================================================================
+// ORIGINAL index.tsx CONTENT
+// =================================================================
+
 import {
   GoogleGenAI,
   LiveServerMessage,
@@ -12,8 +16,10 @@ import {
 } from '@google/genai';
 import {LitElement, css, html} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
-import {createBlob, decode, decodeAudioData} from './utils';
+// FIX: Import modular dependencies instead of inlining them.
 import './visual-3d';
+import { createBlob, decode, decodeAudioData } from './utils';
+
 
 interface TranscriptEntry {
   speaker: 'You' | 'Model';
@@ -40,7 +46,8 @@ export class GdmLiveAudio extends LitElement {
   @state() topicInput = '';
 
   private client: GoogleGenAI;
-  private session: Session;
+  // FIX: Use a session promise to prevent race conditions.
+  private sessionPromise: Promise<Session>;
   // FIX: Cast window to any to access webkitAudioContext for broader browser support.
   private inputAudioContext = new (window.AudioContext ||
     (window as any).webkitAudioContext)({sampleRate: 16000});
@@ -51,7 +58,7 @@ export class GdmLiveAudio extends LitElement {
   @state() outputNode = this.outputAudioContext.createGain();
   private nextStartTime = 0;
   private mediaStream: MediaStream;
-  private sourceNode: AudioBufferSourceNode;
+  private sourceNode: AudioNode; // Changed from AudioBufferSourceNode
   private scriptProcessorNode: ScriptProcessorNode;
   private sources = new Set<AudioBufferSourceNode>();
   private isIntentionallyClosing = false;
@@ -301,8 +308,6 @@ export class GdmLiveAudio extends LitElement {
       changedProperties.has('currentInputTranscription') ||
       changedProperties.has('currentOutputTranscription')
     ) {
-      // FIX: Use this.renderRoot, the correct LitElement property for accessing the shadow DOM.
-      // FIX: Replaced 'this.renderRoot' with 'this.shadowRoot?' to fix property not found error.
       const transcriptEl = this.shadowRoot?.querySelector('#transcript');
       if (transcriptEl) {
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -314,7 +319,7 @@ export class GdmLiveAudio extends LitElement {
     this.nextStartTime = this.outputAudioContext.currentTime;
   }
 
-  private async initClient() {
+  private initClient() {
     this.initAudio();
 
     this.client = new GoogleGenAI({
@@ -326,7 +331,7 @@ export class GdmLiveAudio extends LitElement {
     this.initSession();
   }
 
-  private async initSession() {
+  private initSession() {
     const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
     const systemInstruction = `You are a friendly and encouraging English language tutor named Orb. Your goal is to help the user practice speaking about a specific topic.
 The current topic is: "${this.topic}".
@@ -341,160 +346,160 @@ Your instructions are:
 7.  Keep your tone positive and supportive. Your primary goal is to build the user's confidence in speaking English.
 8.  Speak clearly and at a moderate pace. Avoid complex vocabulary or sentence structures unless the user is advanced.`;
 
-    try {
-      this.session = await this.client.live.connect({
-        model: model,
-        callbacks: {
-          onopen: () => {
-            this.updateStatus('Ready to record.');
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            const audio =
-              message.serverContent?.modelTurn?.parts[0]?.inlineData;
-
-            if (audio) {
-              this.nextStartTime = Math.max(
-                this.nextStartTime,
-                this.outputAudioContext.currentTime,
-              );
-
-              const audioBuffer = await decodeAudioData(
-                decode(audio.data),
-                this.outputAudioContext,
-                24000,
-                1,
-              );
-              const source = this.outputAudioContext.createBufferSource();
-              source.buffer = audioBuffer;
-              source.connect(this.outputNode);
-              source.addEventListener('ended', () => {
-                this.sources.delete(source);
-              });
-
-              source.start(this.nextStartTime);
-              this.nextStartTime = this.nextStartTime + audioBuffer.duration;
-              this.sources.add(source);
-            }
-
-            if (message.serverContent?.inputTranscription) {
-              const text = message.serverContent.inputTranscription.text;
-              this.currentInputTranscription += text;
-            }
-            if (message.serverContent?.outputTranscription) {
-              const text = message.serverContent.outputTranscription.text;
-              this.currentOutputTranscription += text;
-            }
-
-            if (message.serverContent?.turnComplete) {
-              const fullInputTranscription = this.currentInputTranscription;
-              const fullOutputTranscription = this.currentOutputTranscription;
-
-              if (fullInputTranscription.trim()) {
-                this.transcript = [
-                  ...this.transcript,
-                  {speaker: 'You', text: fullInputTranscription.trim()},
-                ];
-              }
-              if (fullOutputTranscription.trim()) {
-                this.transcript = [
-                  ...this.transcript,
-                  {speaker: 'Model', text: fullOutputTranscription.trim()},
-                ];
-              }
-              this.currentInputTranscription = '';
-              this.currentOutputTranscription = '';
-            }
-
-            const interrupted = message.serverContent?.interrupted;
-            if (interrupted) {
-              for (const source of this.sources.values()) {
-                source.stop();
-                this.sources.delete(source);
-              }
-              this.nextStartTime = 0;
-            }
-          },
-          onerror: (e: ErrorEvent) => {
-            let errorMessage =
-              'A network error occurred. Please check your connection.';
-            const errorSource = e.error || e.message;
-
-            let extractedMessage = '';
-            if (typeof errorSource === 'string') {
-              extractedMessage = errorSource;
-            } else if (errorSource instanceof Error) {
-              extractedMessage = errorSource.message;
-            } else if (
-              errorSource &&
-              typeof errorSource.message === 'string'
-            ) {
-              extractedMessage = errorSource.message;
-            }
-
-            // Use the extracted message only if it's meaningful and not an object stringification
-            if (
-              extractedMessage &&
-              !extractedMessage.includes('[object Object]')
-            ) {
-              errorMessage = extractedMessage;
-            }
-
-            // Final cleanup for presentation
-            errorMessage = errorMessage.replace(/^Error: /g, '').trim();
-            if (errorMessage.endsWith('.')) {
-              errorMessage = errorMessage.slice(0, -1);
-            }
-
-            this.updateError(
-              `Connection error: ${errorMessage}. Please reset the session.`,
-              e,
-            );
-          },
-          onclose: (e: CloseEvent) => {
-            if (this.isIntentionallyClosing) {
-              this.isIntentionallyClosing = false; // Reset flag
-              console.log('Session closed intentionally.', e);
-              return; // Do not treat as an error
-            }
-            let reason = 'The connection was closed unexpectedly';
-
-            if (
-              e.reason &&
-              typeof e.reason === 'string' &&
-              !e.reason.includes('[object Object]')
-            ) {
-              reason = e.reason;
-            }
-
-            // Final cleanup for presentation
-            reason = reason.replace(/^Error: /g, '').trim();
-            if (reason.endsWith('.')) {
-              reason = reason.slice(0, -1);
-            }
-
-            this.updateError(
-              `Session closed: ${reason}. You may need to start a new session.`,
-              e,
-            );
-            this.isRecording = false; // Also update state
-          },
+    this.sessionPromise = this.client.live.connect({
+      model: model,
+      callbacks: {
+        onopen: () => {
+          this.updateStatus('Ready to record.');
         },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          speechConfig: {
-            voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Orus'}},
-          },
-          systemInstruction: systemInstruction,
+        onmessage: async (message: LiveServerMessage) => {
+          const audio =
+            message.serverContent?.modelTurn?.parts[0]?.inlineData;
+
+          if (audio) {
+            this.nextStartTime = Math.max(
+              this.nextStartTime,
+              this.outputAudioContext.currentTime,
+            );
+
+            const audioBuffer = await decodeAudioData(
+              decode(audio.data),
+              this.outputAudioContext,
+              24000,
+              1,
+            );
+            const source = this.outputAudioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.outputNode);
+            source.addEventListener('ended', () => {
+              this.sources.delete(source);
+            });
+
+            source.start(this.nextStartTime);
+            this.nextStartTime = this.nextStartTime + audioBuffer.duration;
+            this.sources.add(source);
+          }
+
+          if (message.serverContent?.inputTranscription) {
+            const text = message.serverContent.inputTranscription.text;
+            this.currentInputTranscription += text;
+          }
+          if (message.serverContent?.outputTranscription) {
+            const text = message.serverContent.outputTranscription.text;
+            this.currentOutputTranscription += text;
+          }
+
+          if (message.serverContent?.turnComplete) {
+            const fullInputTranscription = this.currentInputTranscription;
+            const fullOutputTranscription = this.currentOutputTranscription;
+
+            if (fullInputTranscription.trim()) {
+              this.transcript = [
+                ...this.transcript,
+                {speaker: 'You', text: fullInputTranscription.trim()},
+              ];
+            }
+            if (fullOutputTranscription.trim()) {
+              this.transcript = [
+                ...this.transcript,
+                {speaker: 'Model', text: fullOutputTranscription.trim()},
+              ];
+            }
+            this.currentInputTranscription = '';
+            this.currentOutputTranscription = '';
+          }
+
+          const interrupted = message.serverContent?.interrupted;
+          if (interrupted) {
+            for (const source of this.sources.values()) {
+              source.stop();
+              this.sources.delete(source);
+            }
+            this.nextStartTime = 0;
+          }
         },
-      });
-    } catch (e) {
+        onerror: (e: ErrorEvent) => {
+          let errorMessage =
+            'A network error occurred. Please check your connection.';
+          const errorSource = e.error || e.message;
+
+          let extractedMessage = '';
+          if (typeof errorSource === 'string') {
+            extractedMessage = errorSource;
+          } else if (errorSource instanceof Error) {
+            extractedMessage = errorSource.message;
+          } else if (
+            errorSource &&
+            typeof errorSource.message === 'string'
+          ) {
+            extractedMessage = errorSource.message;
+          }
+
+          // Use the extracted message only if it's meaningful and not an object stringification
+          if (
+            extractedMessage &&
+            !extractedMessage.includes('[object Object]')
+          ) {
+            errorMessage = extractedMessage;
+          }
+
+          // Final cleanup for presentation
+          errorMessage = errorMessage.replace(/^Error: /g, '').trim();
+          if (errorMessage.endsWith('.')) {
+            errorMessage = errorMessage.slice(0, -1);
+          }
+
+          this.updateError(
+            `Connection error: ${errorMessage}. Please reset the session.`,
+            e,
+          );
+        },
+        onclose: (e: CloseEvent) => {
+          if (this.isIntentionallyClosing) {
+            this.isIntentionallyClosing = false; // Reset flag
+            console.log('Session closed intentionally.', e);
+            return; // Do not treat as an error
+          }
+          let reason = 'The connection was closed unexpectedly';
+
+          if (
+            e.reason &&
+            typeof e.reason === 'string' &&
+            !e.reason.includes('[object Object]')
+          ) {
+            reason = e.reason;
+          }
+
+          // Final cleanup for presentation
+          reason = reason.replace(/^Error: /g, '').trim();
+          if (reason.endsWith('.')) {
+            reason = reason.slice(0, -1);
+          }
+
+          this.updateError(
+            `Session closed: ${reason}. You may need to start a new session.`,
+            e,
+          );
+          this.isRecording = false; // Also update state
+        },
+      },
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        speechConfig: {
+          voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Orus'}},
+        },
+        systemInstruction: systemInstruction,
+      },
+    });
+
+    this.sessionPromise.catch((e) => {
       this.updateError(
         'Failed to initialize the session. Please check your API key and network connection.',
         e as Error,
       );
-    }
+    });
   }
 
   private updateStatus(msg: string) {
@@ -542,7 +547,10 @@ Your instructions are:
         const inputBuffer = audioProcessingEvent.inputBuffer;
         const pcmData = inputBuffer.getChannelData(0);
 
-        this.session.sendRealtimeInput({media: createBlob(pcmData)});
+        // FIX: Use session promise to avoid race conditions
+        this.sessionPromise.then(session => {
+            session.sendRealtimeInput({media: createBlob(pcmData)});
+        });
       };
 
       this.sourceNode.connect(this.scriptProcessorNode);
@@ -589,7 +597,7 @@ Your instructions are:
 
   private reset() {
     this.isIntentionallyClosing = true;
-    this.session?.close();
+    this.sessionPromise?.then(session => session.close());
     this.initSession();
     this.updateStatus('Resetting session...');
     this.transcript = [];
